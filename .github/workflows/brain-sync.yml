@@ -12,21 +12,44 @@ jobs:
         with:
           fetch-depth: 15
 
-      - name: Collect project info
-        id: info
-        run: |
-          COMMITS=$(git log --oneline -10)
-          CHANGED=$(git diff --name-only HEAD~1 2>/dev/null || echo "initial commit")
-          echo "commits<<EOF" >> $GITHUB_OUTPUT
-          echo "$COMMITS" >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
-          echo "changed<<EOF" >> $GITHUB_OUTPUT
-          echo "$CHANGED" >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
-
       - name: Sync to Brain Vault
+        env:
+          BRAIN_SYNC_SECRET: ${{ secrets.BRAIN_SYNC_SECRET }}
+          PROJECT_NAME: ${{ vars.PROJECT_NAME }}
+          PROJECT_DESCRIPTION: ${{ vars.PROJECT_DESCRIPTION }}
+          REPO: ${{ github.repository }}
         run: |
-          curl -s -X POST https://brain-voice-worker.pfeffer-thomas8.workers.dev/sync-project \
-            -H "Content-Type: application/json" \
-            -H "Authorization: Bearer ${{ secrets.BRAIN_SYNC_SECRET }}" \
-            -d "{\"project\": \"${{ vars.PROJECT_NAME }}\", \"repo\": \"${{ github.repository }}\", \"description\": \"${{ vars.PROJECT_DESCRIPTION }}\", \"commits\": $(echo '${{ steps.info.outputs.commits }}' | python3 -c \"import json,sys; print(json.dumps(sys.stdin.read()))\"), \"changedFiles\": $(echo '${{ steps.info.outputs.changed }}' | python3 -c \"import json,sys; print(json.dumps(sys.stdin.read()))\")}"
+          python3 - <<'EOF'
+          import subprocess, json, urllib.request, os
+
+          commits = subprocess.check_output(
+            ['git', 'log', '--oneline', '-10'], text=True
+          ).strip()
+
+          try:
+            changed = subprocess.check_output(
+              ['git', 'diff', '--name-only', 'HEAD~1'], text=True
+            ).strip()
+          except:
+            changed = "initial commit"
+
+          payload = json.dumps({
+            "project":      os.environ["PROJECT_NAME"],
+            "repo":         os.environ["REPO"],
+            "description":  os.environ["PROJECT_DESCRIPTION"],
+            "commits":      commits,
+            "changedFiles": changed,
+          }).encode()
+
+          req = urllib.request.Request(
+            "https://brain-voice-worker.pfeffer-thomas8.workers.dev/sync-project",
+            data=payload,
+            headers={
+              "Content-Type": "application/json",
+              "Authorization": f"Bearer {os.environ['BRAIN_SYNC_SECRET']}",
+            },
+            method="POST"
+          )
+          with urllib.request.urlopen(req, timeout=30) as res:
+            print(res.read().decode())
+          EOF
