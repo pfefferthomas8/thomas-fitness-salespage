@@ -3,6 +3,7 @@ name: Brain Sync
 on:
   push:
     branches: [main]
+  workflow_dispatch:
 
 jobs:
   sync:
@@ -17,3 +18,4 @@ jobs:
           PROJECT_NAME: ${{ vars.PROJECT_NAME }}
           PROJECT_DESCRIPTION: ${{ vars.PROJECT_DESCRIPTION }}
         run: python3 .github/scripts/brain_sync.py
+
